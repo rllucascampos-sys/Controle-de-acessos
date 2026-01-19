@@ -13,7 +13,7 @@ st.markdown("Sistema compatível com planilhas **Ebskills** e **Outras Plataform
 st.sidebar.header("⚙️ Configuração")
 tipo_planilha = st.sidebar.radio(
     "Qual o modelo da planilha?",
-    ("Padrão Ebskills", "Outra Planilha (Genérica)")
+    ("Padrão Ebskills", "Outra Planilha (alpaclass)")
 )
 
 # --- UPLOAD ---
@@ -178,4 +178,5 @@ if arquivo is not None:
         st.download_button("Mês Vigente", data=to_csv(df_final[mask_mes]), file_name="mes_vigente.csv")
 
     except Exception as e:
+
         st.error(f"Erro: {e}")
