@@ -80,39 +80,39 @@ if arquivo is not None:
             
             coluna_data_nome = 'Último login'
 
+       
         # ==============================================================================
         # MODO 2: GENÉRICO (Flexível)
         # ==============================================================================
         else:
-            st.info("Modo ativado: **Genérico**. A limpeza de e-mails EB já foi tentada automaticamente.")
+            st.info("Modo ativado: **Outras Planilhas**.")
             
-            # Identificação da data
             colunas_disponiveis = df.columns.tolist()
-            index_sugerido = 0
-            termos_comuns = ['Data do último acesso', 'Último login', 'Last Login', 'Acesso', 'Date', 'Criado em']
             
-            for termo in termos_comuns:
-                for i, col in enumerate(colunas_disponiveis):
-                    if termo.lower() in col.lower():
-                        index_sugerido = i
-                        break
-                if index_sugerido != 0: break
+            # Tentativa de encontrar a coluna de data automaticamente
+            termos_comuns = ['data', 'login', 'acesso', 'last', 'criado', 'date']
+            index_sugerido = 0
+            for i, col in enumerate(colunas_disponiveis):
+                if any(termo in col.lower() for termo in termos_comuns):
+                    index_sugerido = i
+                    break
             
             coluna_data_nome = st.selectbox(
-                "Qual coluna tem a Data de Referência?", 
+                "Selecione a coluna que contém a DATA:", 
                 colunas_disponiveis, 
                 index=index_sugerido
             )
             
+            # IMPORTANTE: Definimos o df_final aqui para garantir que ele não comece vazio
+            df_final = df.copy()
+
             # Filtro Opcional Extra
-            usar_filtro = st.checkbox("Quero filtrar uma coluna extra (Ex: Filtrar por Curso/Tags)")
+            usar_filtro = st.checkbox("Filtrar por outra coluna (Ex: Curso, Status, Produto)")
             if usar_filtro:
-                col_filtro = st.selectbox("Escolha a coluna para filtrar:", colunas_disponiveis)
-                valores_unicos = df[col_filtro].astype(str).unique()
-                valores_escolhidos = st.multiselect(f"Manter apenas:", valores_unicos, default=valores_unicos)
-                df_final = df[df[col_filtro].astype(str).isin(valores_escolhidos)].copy()
-            else:
-                df_final = df.copy()
+                col_filtro = st.selectbox("Coluna para filtrar:", colunas_disponiveis)
+                valores_unicos = df[col_filtro].unique()
+                valores_escolhidos = st.multiselect("Manter apenas:", valores_unicos, default=valores_unicos)
+                df_final = df[df[col_filtro].isin(valores_escolhidos)].copy()
 
         # ==============================================================================
         # CÁLCULOS E VISUALIZAÇÃO
