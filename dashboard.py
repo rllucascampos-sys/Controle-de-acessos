@@ -63,17 +63,21 @@ if arquivo is not None:
             
             coluna_data_nome = 'Último login'
 
-        # ==============================================================================
-        # MODO 2: OUTRA PLANILHA (COM REGRA DE 11 MESES)
+     # ==============================================================================
+        # MODO 2: OUTRAS PLANILHAS (Filtro por Criação / Status por Acesso)
         # ==============================================================================
         else:
-            st.info("Modo ativado: **Outras Planilhas**. Regra de 11 meses (ignora mês atual).")
+            st.info("Modo ativado: **Outras Planilhas**. Filtro baseado na Data de Criação.")
             
             colunas_disp = df.columns.tolist()
-            termos_data = ['data', 'login', 'acesso', 'last', 'criado', 'date']
-            index_sug = next((i for i, col in enumerate(colunas_disp) if any(t in col.lower() for t in termos_data)), 0)
             
-            coluna_data_nome = st.selectbox("Qual coluna tem a Data de Referência?", colunas_disp, index=index_sug)
+            # Identificação automática sugerida das colunas
+            idx_criacao = next((i for i, c in enumerate(colunas_disp) if 'cria' in c.lower()), 0)
+            idx_acesso = next((i for i, c in enumerate(colunas_disp) if ('acesso' in c.lower() or 'login' in c.lower()) and 'cria' not in c.lower()), 0)
+            
+            # Seleção de colunas (Já vem pré-selecionado o que o sistema identificou)
+            col_criacao_nome = st.selectbox("Selecione a coluna de DATA DE CRIAÇÃO:", colunas_disp, index=idx_criacao)
+            coluna_data_nome = st.selectbox("Selecione a coluna de ÚLTIMO ACESSO:", colunas_disp, index=idx_acesso)
             
             # --- CÁLCULO DA JANELA (11 MESES) ---
             hoje_ref = datetime.datetime.now()
@@ -86,11 +90,13 @@ if arquivo is not None:
                 ano_inicio = hoje_ref.year
             data_inicio = datetime.datetime(ano_inicio, mes_inicio, 1) # Mês seguinte do ano passado
 
-            st.success(f"📅 Analisando Período: {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}")
+            st.success(f"📅 Analisando alunos CRIADOS entre: {data_inicio.strftime('%d/%m/%Y')} e {data_fim.strftime('%d/%m/%Y')}")
 
-            # Converte e Filtra
-            df['data_convertida'] = pd.to_datetime(df[coluna_data_nome], errors='coerce')
-            df_final = df[(df['data_convertida'] >= data_inicio) & (df['data_convertida'] <= data_fim)].copy()
+            # Converte a Data de Criação para aplicar o filtro de entrada
+            df['dt_criacao_filtro'] = pd.to_datetime(df[col_criacao_nome], errors='coerce')
+            
+            # FILTRO: Só entram alunos criados dentro da janela (Isso fará bater com seus 12 alunos)
+            df_final = df[(df['dt_criacao_filtro'] >= data_inicio) & (df['dt_criacao_filtro'] <= data_fim)].copy()
 
             if st.checkbox("Quero filtrar uma coluna extra"):
                 col_filtro = st.selectbox("Escolha a coluna:", colunas_disp)
@@ -106,19 +112,19 @@ if arquivo is not None:
 
         hoje = datetime.datetime.now()
         
-        # Converte a data final (se for Ebskills usa dayfirst=True)
+        # Converte a data de ACESSO para calcular os dias de atraso e o gráfico
+        # dayfirst=True garante compatibilidade com o formato brasileiro (DD/MM/AAAA)
         df_final['data_processada'] = pd.to_datetime(df_final[coluna_data_nome], dayfirst=True, errors='coerce')
         
         df_final['nunca_acessou'] = df_final['data_processada'].isna()
         df_final['dias_atraso'] = (hoje - df_final['data_processada']).dt.days
 
-        # Buckets
+        # Buckets de Engajamento baseados no ÚLTIMO ACESSO
         mask_nunca = df_final['nunca_acessou']
         mask_15_30 = (df_final['dias_atraso'] >= 15) & (df_final['dias_atraso'] <= 30)
         mask_30_60 = (df_final['dias_atraso'] > 30) & (df_final['dias_atraso'] <= 60)
         mask_60_mais = (df_final['dias_atraso'] > 60)
         mask_mes = (df_final['data_processada'].dt.month == hoje.month) & (df_final['data_processada'].dt.year == hoje.year)
-
         # Dashboard
         st.divider()
         st.subheader(f"Resultados ({len(df_final)} alunos)")
