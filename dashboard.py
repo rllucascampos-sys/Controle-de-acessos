@@ -1,54 +1,42 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
 import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Dashboard de Acessos", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Data Insights AP", layout="wide", page_icon="📈")
 
-# --- ESTILIZAÇÃO CSS PERSONALIZADA ---
+# --- ESTILO CSS PROFISSIONAL ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stMetric {
+    .main { background-color: #f8f9fa; }
+    div[data-testid="stMetric"] {
         background-color: #ffffff;
         padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #f0f0f0;
     }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #007bff;
-        color: white;
-    }
-    .sidebar .sidebar-content {
-        background-color: #ffffff;
-    }
+    [data-testid="stMetricValue"] { font-size: 1.8rem; color: #1f77b4; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 Dashboard de Controle de Acesso")
-st.markdown("---")
+st.title("📊 Gestão Estratégica de Acessos")
+st.markdown("Análise avançada de retenção e engajamento.")
 
-# --- BARRA LATERAL ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configurações")
     tipo_planilha = st.radio(
-        "Modelo da Planilha:",
-        ("Padrão Ebskills", "Outra Planilha (Alpaclass/CSV)"),
-        help="Selecione o formato para aplicar as regras de filtro corretas."
+        "Modelo de Dados",
+        ("Padrão Ebskills", "Outra Planilha (Regra 11 Meses)")
     )
     st.divider()
-    arquivo = st.file_uploader("📂 Carregar Arquivo", type=['csv', 'xlsx'])
+    arquivo = st.file_uploader("📂 Carregar base de dados", type=['csv', 'xlsx'])
 
-if arquivo is not None:
+if arquivo:
     try:
-        # 1. LEITURA DO ARQUIVO
+        # 1. LEITURA (Detectando separador do teu CSV)
         if arquivo.name.endswith('.csv'):
             try:
                 df = pd.read_csv(arquivo, sep=';', engine='python')
@@ -60,47 +48,46 @@ if arquivo is not None:
 
         df.columns = df.columns.str.strip()
         
-        # 2. LIMPEZA DE EQUIPE
-        col_email = next((col for col in df.columns if col.lower() in ['email', 'e-mail', 'mail']), None)
+        # 2. LIMPEZA DE EQUIPE (EB)
+        col_email = next((c for c in df.columns if 'email' in c.lower()), None)
         if col_email:
-            dominios = ('@ebtreinamentos.com', '@ebedu.com.br')
-            df = df[~df[col_email].astype(str).str.lower().str.strip().str.endswith(dominios)]
+            df = df[~df[col_email].astype(str).str.contains('ebtreinamentos|ebedu', case=False)]
 
         df_final = pd.DataFrame()
-        coluna_data_nome = ""
+        coluna_data_acesso = ""
 
         # ==============================================================================
-        # MODO 1: EBSKILLS
+        # MODO 1: EBSKILLS (REGRA ORIGINAL)
         # ==============================================================================
         if tipo_planilha == "Padrão Ebskills":
-            st.subheader("📋 Filtros Ebskills")
-            
+            st.info("💡 Modo Ebskills: Análise de base ativa total.")
             col_status = 'Staus' if 'Staus' in df.columns else 'Status'
             if col_status in df.columns:
                 df = df[df[col_status].astype(str).str.strip().str.capitalize() == 'Ativo']
             
-            perfis_permitidos = ['AlunoComunidade', 'AlunoCursos', 'AlunoCompleto', 'AlunoBasico']
+            perfis = ['AlunoComunidade', 'AlunoCursos', 'AlunoCompleto', 'AlunoBasico']
             if 'Perfil' in df.columns:
-                perfis_existentes = [p for p in perfis_permitidos if p in df['Perfil'].unique()]
-                perfis_sel = st.multiselect("Filtrar por Perfil:", perfis_existentes, default=perfis_existentes)
-                df_final = df[df['Perfil'].isin(perfis_sel)].copy()
+                selecao = st.multiselect("Filtrar Perfis:", perfis, default=perfis)
+                df_final = df[df['Perfil'].isin(selecao)].copy()
             else:
                 df_final = df.copy()
             
-            coluna_data_nome = 'Último login'
+            coluna_data_acesso = 'Último login'
 
         # ==============================================================================
-        # MODO 2: OUTRAS PLANILHAS (REGRA 11 MESES)
+        # MODO 2: OUTRAS PLANILHAS (JANELA 11 MESES - USANDO DATA DE ACESSO)
         # ==============================================================================
         else:
-            st.subheader("🔍 Filtros Outras Planilhas")
+            st.info("🎯 Modo Outras Planilhas: Regra de 11 meses (ignora mês atual).")
             
+            # Prioriza "último acesso" em vez de "criação"
             colunas = df.columns.tolist()
-            termos_data = ['data', 'login', 'acesso', 'last', 'criado', 'date']
-            index_sugestao = next((i for i, col in enumerate(colunas) if any(t in col.lower() for t in termos_data)), 0)
+            termos_acesso = ['acesso', 'login', 'last', 'último']
+            idx_sugerido = next((i for i, c in enumerate(colunas) if any(t in c.lower() for t in termos_acesso) and 'cria' not in c.lower()), 0)
             
-            coluna_data_nome = st.selectbox("Selecione a coluna de DATA:", colunas, index=index_sugestao)
+            coluna_data_acesso = st.selectbox("Selecione a coluna de ÚLTIMO ACESSO:", colunas, index=idx_sugerido)
 
+            # Cálculo da Janela Móvel
             hoje = datetime.datetime.now()
             data_fim = hoje.replace(day=1) - datetime.timedelta(days=1)
             mes_inicio = hoje.month + 1
@@ -110,75 +97,67 @@ if arquivo is not None:
                 ano_inicio = hoje.year
             data_inicio = datetime.datetime(ano_inicio, mes_inicio, 1)
 
-            st.info(f"📅 **Análise Temporal:** {data_inicio.strftime('%b/%y')} a {data_fim.strftime('%b/%y')}")
+            st.success(f"📅 Analisando Acessos entre: **{data_inicio.strftime('%d/%m/%Y')}** e **{data_fim.strftime('%d/%m/%Y')}**")
 
-            df['data_temp'] = pd.to_datetime(df[coluna_data_nome], errors='coerce')
-            df_final = df[(df['data_temp'] >= data_inicio) & (df['data_temp'] <= data_fim)].copy()
+            # Converte e aplica o filtro
+            df['dt_temp'] = pd.to_datetime(df[coluna_data_acesso], errors='coerce')
+            df_final = df[(df['dt_temp'] >= data_inicio) & (df['dt_temp'] <= data_fim)].copy()
+
+            # Filtro por Tags (Muito útil para as tuas planilhas)
+            if 'Tags' in df_final.columns:
+                tags_unicas = df_final['Tags'].dropna().unique()
+                tags_sel = st.multiselect("Segmentar por Tags:", tags_unicas)
+                if tags_sel:
+                    df_final = df_final[df_final['Tags'].isin(tags_sel)]
 
         # ==============================================================================
-        # DASHBOARD VISUAL
+        # DASHBOARD E GRÁFICOS INTERATIVOS
         # ==============================================================================
         if df_final.empty:
-            st.warning("⚠️ Nenhum dado encontrado para os filtros selecionados.")
+            st.warning("Nenhum dado encontrado para os filtros aplicados.")
         else:
-            df_final['data_processada'] = pd.to_datetime(df_final[coluna_data_nome], errors='coerce')
+            # Cálculos de Recência
+            df_final['dt_proc'] = pd.to_datetime(df_final[coluna_data_acesso], errors='coerce')
             hoje_ref = datetime.datetime.now()
-            df_final['dias_atraso'] = (hoje_ref - df_final['data_processada']).dt.days
+            df_final['dias'] = (hoje_ref - df_final['dt_proc']).dt.days
 
-            # Mascaras
-            m_nunca = df_final['data_processada'].isna()
-            m_15_30 = (df_final['dias_atraso'] >= 15) & (df_final['dias_atraso'] <= 30)
-            m_30_60 = (df_final['dias_atraso'] > 30) & (df_final['dias_atraso'] <= 60)
-            m_60_mais = (df_final['dias_atraso'] > 60)
-            m_mes = (df_final['data_processada'].dt.month == hoje_ref.month) & (df_final['data_processada'].dt.year == hoje_ref.year)
+            m_nunca = df_final['dt_proc'].isna()
+            m_15_30 = (df_final['dias'] >= 15) & (df_final['dias'] <= 30)
+            m_30_60 = (df_final['dias'] > 30) & (df_final['dias'] <= 60)
+            m_60_mais = (df_final['dias'] > 60)
+            m_ativos = (df_final['dias'] < 15)
 
-            # --- LINHA 1: MÉTRICAS (CARDS) ---
-            st.markdown("### 📈 Indicadores Chave")
+            # --- CARDS KPI ---
+            st.markdown("### 🚀 Indicadores de Retenção")
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Sem Acesso", m_nunca.sum(), delta="Total", delta_color="off")
-            c2.metric("15-30 Dias", m_15_30.sum(), delta="Crítico", delta_color="inverse")
-            c3.metric("30-60 Dias", m_30_60.sum(), delta="Atenção", delta_color="normal")
-            c4.metric("+60 Dias", m_60_mais.sum(), delta="Inativo", delta_color="inverse")
-            c5.metric("Mês Atual", m_mes.sum(), delta="Novos", delta_color="normal")
+            c1.metric("Nunca Acessou", m_nunca.sum())
+            c2.metric("Alerta (15-30d)", m_15_30.sum())
+            c3.metric("Risco (30-60d)", m_30_60.sum())
+            c4.metric("Inativos (+60d)", m_60_mais.sum())
+            c5.metric("Ativos (<15d)", m_ativos.sum())
 
-            # --- LINHA 2: GRÁFICO ---
+            # --- GRÁFICO PLOTLY ---
             st.markdown("---")
-            col_graph, col_info = st.columns([2, 1])
-
-            with col_graph:
-                st.markdown("#### Visualização de Engajamento")
-                fig, ax = plt.subplots(figsize=(10, 5))
-                fig.patch.set_facecolor('#f5f7f9')
-                cats = ['Nunca', '15-30d', '30-60d', '+60d', 'Mês Atual']
-                vals = [m_nunca.sum(), m_15_30.sum(), m_30_60.sum(), m_60_mais.sum(), m_mes.sum()]
-                cores = ['#EF5350', '#FB8C00', '#FDD835', '#90A4AE', '#4CAF50']
-                
-                bars = ax.bar(cats, vals, color=cores, edgecolor='white', linewidth=0.7)
-                ax.set_facecolor('#f5f7f9')
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-                
-                for bar in bars:
-                    ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5, 
-                            int(bar.get_height()), ha='center', fontweight='bold', color='#444444')
-                st.pyplot(fig)
-
-            with col_info:
-                st.markdown("#### ℹ️ Resumo")
-                st.info(f"Total de alunos processados: **{len(df_final)}**")
-                taxa_engajamento = ((m_mes.sum() + (len(df_final) - m_60_mais.sum() - m_nunca.sum())) / len(df_final)) * 100
-                st.write(f"Taxa estimada de engajamento: **{taxa_engajamento:.1f}%**")
-
-            # --- LINHA 3: DOWNLOADS ---
-            st.markdown("---")
-            st.markdown("#### 📥 Exportar Listas")
-            def to_csv(d): return d.to_csv(sep=';', index=False, encoding='utf-8-sig').encode('utf-8-sig')
+            dados_fig = pd.DataFrame({
+                'Status': ['Nunca', '15-30d', '30-60d', '+60d', 'Ativos'],
+                'Qtd': [m_nunca.sum(), m_15_30.sum(), m_30_60.sum(), m_60_mais.sum(), m_ativos.sum()]
+            })
             
-            d1, d2, d3, d4 = st.columns(4)
-            d1.download_button("📂 Nunca Acessaram", to_csv(df_final[m_nunca]), "nunca.csv")
-            d2.download_button("📂 Atraso 15-30d", to_csv(df_final[m_15_30]), "atraso_15_30.csv")
-            d3.download_button("📂 Atraso +60d", to_csv(df_final[m_60_mais]), "atraso_60.csv")
-            d4.download_button("📂 Mês Vigente", to_csv(df_final[m_mes]), "mes_atual.csv")
+            fig = px.bar(dados_fig, x='Status', y='Qtd', color='Status', text_auto=True,
+                         title="Distribuição de Alunos por Último Acesso",
+                         color_discrete_map={'Nunca':'#EF5350','15-30d':'#ffa726','30-60d':'#ffeb3b','+60d':'#90a4ae','Ativos':'#66bb6a'})
+            
+            fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # --- EXPORTAÇÃO ---
+            st.markdown("### 📥 Centra de Exportação")
+            def to_csv(d): return d.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+            
+            d1, d2, d3 = st.columns(3)
+            d1.download_button("🔴 Lista Desengajados", to_csv(df_final[m_60_mais]), "desengajados.csv")
+            d2.download_button("🟡 Lista em Risco", to_csv(df_final[m_15_30 | m_30_60]), "risco.csv")
+            d3.download_button("🟢 Base Filtrada", to_csv(df_final), "base_completa.csv")
 
     except Exception as e:
-        st.error(f"❌ Erro crítico: {e}")
+        st.error(f"Ocorreu um erro: {e}")
