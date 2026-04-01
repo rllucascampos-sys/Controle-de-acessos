@@ -4,179 +4,181 @@ import matplotlib.pyplot as plt
 import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="controle de acessos", layout="wide")
+st.set_page_config(page_title="Dashboard de Acessos", layout="wide", page_icon="📊")
 
-st.title("📊 Controle de Acesso")
-st.markdown("Sistema compatível com planilhas **Ebskills** e **Outras Plataformas** (Hotmart, CSVs genéricos, etc).")
+# --- ESTILIZAÇÃO CSS PERSONALIZADA ---
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stMetric {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #e0e0e0;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #007bff;
+        color: white;
+    }
+    .sidebar .sidebar-content {
+        background-color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- BARRA LATERAL: ESCOLHA DO MODO ---
-st.sidebar.header("⚙️ Configuração")
-tipo_planilha = st.sidebar.radio(
-    "Qual o modelo da planilha?",
-    ("Padrão Ebskills", "Outra Planilha (alpaclass)")
-)
+st.title("🚀 Dashboard de Controle de Acesso")
+st.markdown("---")
 
-# --- UPLOAD ---
-arquivo = st.file_uploader("📂 Solte seu arquivo Excel (.xlsx) ou CSV aqui", type=['csv', 'xlsx'])
+# --- BARRA LATERAL ---
+with st.sidebar:
+    st.header("⚙️ Configurações")
+    tipo_planilha = st.radio(
+        "Modelo da Planilha:",
+        ("Padrão Ebskills", "Outra Planilha (Alpaclass/CSV)"),
+        help="Selecione o formato para aplicar as regras de filtro corretas."
+    )
+    st.divider()
+    arquivo = st.file_uploader("📂 Carregar Arquivo", type=['csv', 'xlsx'])
 
 if arquivo is not None:
     try:
-        # --- LEITURA INTELIGENTE DO ARQUIVO ---
+        # 1. LEITURA DO ARQUIVO
         if arquivo.name.endswith('.csv'):
             try:
-                df = pd.read_csv(arquivo, sep=None, engine='python')
+                df = pd.read_csv(arquivo, sep=';', engine='python')
             except:
                 arquivo.seek(0)
-                df = pd.read_csv(arquivo, sep=';')
+                df = pd.read_csv(arquivo, sep=',', engine='python')
         else:
             df = pd.read_excel(arquivo)
 
-        # Remove espaços extras dos nomes das colunas
         df.columns = df.columns.str.strip()
         
-        # --- LIMPEZA AUTOMÁTICA DE EQUIPE (PARA AMBOS OS MODOS) ---
-        # Procura se existe alguma coluna de e-mail para aplicar o filtro
-        coluna_email_encontrada = None
-        for col in df.columns:
-            if col.lower() in ['email', 'e-mail', 'mail', 'endereço de email']:
-                coluna_email_encontrada = col
-                break
-        
-        if coluna_email_encontrada:
-            # Aplica o filtro da EB
-            emails_norm = df[coluna_email_encontrada].astype(str).str.lower().str.strip()
-            dominios_internos = ('@ebtreinamentos.com', '@ebedu.com.br')
-            qtd_antes = len(df)
-            df = df[~emails_norm.str.endswith(dominios_internos)]
-            qtd_depois = len(df)
-            removidos = qtd_antes - qtd_depois
-            
-            if removidos > 0:
-                st.toast(f"🧹 Limpeza realizada: {removidos} emails da equipe EB foram removidos.", icon="🗑️")
-        
-        # Variáveis de trabalho
+        # 2. LIMPEZA DE EQUIPE
+        col_email = next((col for col in df.columns if col.lower() in ['email', 'e-mail', 'mail']), None)
+        if col_email:
+            dominios = ('@ebtreinamentos.com', '@ebedu.com.br')
+            df = df[~df[col_email].astype(str).str.lower().str.strip().str.endswith(dominios)]
+
         df_final = pd.DataFrame()
         coluna_data_nome = ""
 
         # ==============================================================================
-        # MODO 1: PADRÃO EBSKILLS (Regras Rígidas de Perfil e Status)
+        # MODO 1: EBSKILLS
         # ==============================================================================
         if tipo_planilha == "Padrão Ebskills":
-            st.info("Modo ativado: **Ebskills**. Filtros de Status e Perfil aplicados.")
+            st.subheader("📋 Filtros Ebskills")
             
-            # Filtro de Status
             col_status = 'Staus' if 'Staus' in df.columns else 'Status'
             if col_status in df.columns:
                 df = df[df[col_status].astype(str).str.strip().str.capitalize() == 'Ativo']
             
-            # Filtro de Perfil
             perfis_permitidos = ['AlunoComunidade', 'AlunoCursos', 'AlunoCompleto', 'AlunoBasico']
             if 'Perfil' in df.columns:
-                df = df[df['Perfil'].isin(perfis_permitidos)]
-            
-            # Menu de seleção
-            perfis_sel = st.sidebar.multiselect("Filtrar Perfis:", perfis_permitidos, default=perfis_permitidos)
-            df_final = df[df['Perfil'].isin(perfis_sel)].copy()
+                perfis_existentes = [p for p in perfis_permitidos if p in df['Perfil'].unique()]
+                perfis_sel = st.multiselect("Filtrar por Perfil:", perfis_existentes, default=perfis_existentes)
+                df_final = df[df['Perfil'].isin(perfis_sel)].copy()
+            else:
+                df_final = df.copy()
             
             coluna_data_nome = 'Último login'
 
-       
         # ==============================================================================
-        # MODO 2: GENÉRICO (Flexível)
+        # MODO 2: OUTRAS PLANILHAS (REGRA 11 MESES)
         # ==============================================================================
         else:
-            st.info("Modo ativado: **Outras Planilhas**.")
+            st.subheader("🔍 Filtros Outras Planilhas")
             
-            colunas_disponiveis = df.columns.tolist()
+            colunas = df.columns.tolist()
+            termos_data = ['data', 'login', 'acesso', 'last', 'criado', 'date']
+            index_sugestao = next((i for i, col in enumerate(colunas) if any(t in col.lower() for t in termos_data)), 0)
             
-            # Tentativa de encontrar a coluna de data automaticamente
-            termos_comuns = ['data', 'login', 'acesso', 'last', 'criado', 'date']
-            index_sugerido = 0
-            for i, col in enumerate(colunas_disponiveis):
-                if any(termo in col.lower() for termo in termos_comuns):
-                    index_sugerido = i
-                    break
-            
-            coluna_data_nome = st.selectbox(
-                "Selecione a coluna que contém a DATA:", 
-                colunas_disponiveis, 
-                index=index_sugerido
-            )
-            
-            # IMPORTANTE: Definimos o df_final aqui para garantir que ele não comece vazio
-            df_final = df.copy()
+            coluna_data_nome = st.selectbox("Selecione a coluna de DATA:", colunas, index=index_sugestao)
 
-            # Filtro Opcional Extra
-            usar_filtro = st.checkbox("Filtrar por outra coluna (Ex: Curso, Status, Produto)")
-            if usar_filtro:
-                col_filtro = st.selectbox("Coluna para filtrar:", colunas_disponiveis)
-                valores_unicos = df[col_filtro].unique()
-                valores_escolhidos = st.multiselect("Manter apenas:", valores_unicos, default=valores_unicos)
-                df_final = df[df[col_filtro].isin(valores_escolhidos)].copy()
+            hoje = datetime.datetime.now()
+            data_fim = hoje.replace(day=1) - datetime.timedelta(days=1)
+            mes_inicio = hoje.month + 1
+            ano_inicio = hoje.year - 1
+            if mes_inicio > 12: 
+                mes_inicio = 1
+                ano_inicio = hoje.year
+            data_inicio = datetime.datetime(ano_inicio, mes_inicio, 1)
+
+            st.info(f"📅 **Análise Temporal:** {data_inicio.strftime('%b/%y')} a {data_fim.strftime('%b/%y')}")
+
+            df['data_temp'] = pd.to_datetime(df[coluna_data_nome], errors='coerce')
+            df_final = df[(df['data_temp'] >= data_inicio) & (df['data_temp'] <= data_fim)].copy()
 
         # ==============================================================================
-        # CÁLCULOS E VISUALIZAÇÃO
+        # DASHBOARD VISUAL
         # ==============================================================================
-        
         if df_final.empty:
-            st.warning("Nenhum dado encontrado após os filtros.")
-            st.stop()
+            st.warning("⚠️ Nenhum dado encontrado para os filtros selecionados.")
+        else:
+            df_final['data_processada'] = pd.to_datetime(df_final[coluna_data_nome], errors='coerce')
+            hoje_ref = datetime.datetime.now()
+            df_final['dias_atraso'] = (hoje_ref - df_final['data_processada']).dt.days
 
-        if coluna_data_nome not in df_final.columns:
-            st.error(f"Erro: A coluna '{coluna_data_nome}' não existe.")
-            st.stop()
+            # Mascaras
+            m_nunca = df_final['data_processada'].isna()
+            m_15_30 = (df_final['dias_atraso'] >= 15) & (df_final['dias_atraso'] <= 30)
+            m_30_60 = (df_final['dias_atraso'] > 30) & (df_final['dias_atraso'] <= 60)
+            m_60_mais = (df_final['dias_atraso'] > 60)
+            m_mes = (df_final['data_processada'].dt.month == hoje_ref.month) & (df_final['data_processada'].dt.year == hoje_ref.year)
 
-        hoje = datetime.datetime.now()
-        
-        # Converte Data
-        df_final['data_processada'] = pd.to_datetime(df_final[coluna_data_nome], dayfirst=True, errors='coerce')
-        
-        # Flags
-        df_final['nunca_acessou'] = df_final['data_processada'].isna()
-        df_final['dias_atraso'] = (hoje - df_final['data_processada']).dt.days
+            # --- LINHA 1: MÉTRICAS (CARDS) ---
+            st.markdown("### 📈 Indicadores Chave")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Sem Acesso", m_nunca.sum(), delta="Total", delta_color="off")
+            c2.metric("15-30 Dias", m_15_30.sum(), delta="Crítico", delta_color="inverse")
+            c3.metric("30-60 Dias", m_30_60.sum(), delta="Atenção", delta_color="normal")
+            c4.metric("+60 Dias", m_60_mais.sum(), delta="Inativo", delta_color="inverse")
+            c5.metric("Mês Atual", m_mes.sum(), delta="Novos", delta_color="normal")
 
-        # Buckets
-        mask_nunca = df_final['nunca_acessou']
-        mask_15_30 = (df_final['dias_atraso'] >= 15) & (df_final['dias_atraso'] <= 30)
-        mask_30_60 = (df_final['dias_atraso'] > 30) & (df_final['dias_atraso'] <= 60)
-        mask_60_mais = (df_final['dias_atraso'] > 60)
-        mask_mes = (df_final['data_processada'].dt.month == hoje.month) & (df_final['data_processada'].dt.year == hoje.year)
+            # --- LINHA 2: GRÁFICO ---
+            st.markdown("---")
+            col_graph, col_info = st.columns([2, 1])
 
-        # Dashboard
-        st.divider()
-        st.subheader(f"Resultados ({len(df_final)} alunos)")
-        
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Nunca Acessou", mask_nunca.sum())
-        c2.metric("15-30 Dias", mask_15_30.sum())
-        c3.metric("30-60 Dias", mask_30_60.sum())
-        c4.metric("+60 Dias", mask_60_mais.sum())
-        c5.metric("Mês Atual", mask_mes.sum())
+            with col_graph:
+                st.markdown("#### Visualização de Engajamento")
+                fig, ax = plt.subplots(figsize=(10, 5))
+                fig.patch.set_facecolor('#f5f7f9')
+                cats = ['Nunca', '15-30d', '30-60d', '+60d', 'Mês Atual']
+                vals = [m_nunca.sum(), m_15_30.sum(), m_30_60.sum(), m_60_mais.sum(), m_mes.sum()]
+                cores = ['#EF5350', '#FB8C00', '#FDD835', '#90A4AE', '#4CAF50']
+                
+                bars = ax.bar(cats, vals, color=cores, edgecolor='white', linewidth=0.7)
+                ax.set_facecolor('#f5f7f9')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                for bar in bars:
+                    ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5, 
+                            int(bar.get_height()), ha='center', fontweight='bold', color='#444444')
+                st.pyplot(fig)
 
-        # Gráfico
-        fig, ax = plt.subplots(figsize=(10, 4))
-        cats = ['Nunca', '15-30', '30-60', '+60', 'Mês Atual']
-        vals = [mask_nunca.sum(), mask_15_30.sum(), mask_30_60.sum(), mask_60_mais.sum(), mask_mes.sum()]
-        colors = ['#c0392b', '#e67e22', '#f1c40f', '#7f8c8d', '#27ae60']
-        
-        barras = ax.bar(cats, vals, color=colors)
-        ax.set_title("Status de Acesso")
-        
-        for bar in barras:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height, '%d' % int(height), ha='center', va='bottom')
-        st.pyplot(fig)
+            with col_info:
+                st.markdown("#### ℹ️ Resumo")
+                st.info(f"Total de alunos processados: **{len(df_final)}**")
+                taxa_engajamento = ((m_mes.sum() + (len(df_final) - m_60_mais.sum() - m_nunca.sum())) / len(df_final)) * 100
+                st.write(f"Taxa estimada de engajamento: **{taxa_engajamento:.1f}%**")
 
-        # Downloads
-        st.subheader("📥 Baixar Relatórios")
-        def to_csv(d): return d.to_csv(sep=';', index=False, encoding='utf-8-sig').encode('utf-8-sig')
-
-        col_d1, col_d2, col_d3 = st.columns(3)
-        col_d1.download_button("Nunca", data=to_csv(df_final[mask_nunca]), file_name="nunca.csv")
-        col_d2.download_button("15-30 Dias", data=to_csv(df_final[mask_15_30]), file_name="15_30.csv")
-        col_d3.download_button("+60 Dias", data=to_csv(df_final[mask_60_mais]), file_name="mais_60.csv")
-        st.download_button("Mês Vigente", data=to_csv(df_final[mask_mes]), file_name="mes_vigente.csv")
+            # --- LINHA 3: DOWNLOADS ---
+            st.markdown("---")
+            st.markdown("#### 📥 Exportar Listas")
+            def to_csv(d): return d.to_csv(sep=';', index=False, encoding='utf-8-sig').encode('utf-8-sig')
+            
+            d1, d2, d3, d4 = st.columns(4)
+            d1.download_button("📂 Nunca Acessaram", to_csv(df_final[m_nunca]), "nunca.csv")
+            d2.download_button("📂 Atraso 15-30d", to_csv(df_final[m_15_30]), "atraso_15_30.csv")
+            d3.download_button("📂 Atraso +60d", to_csv(df_final[m_60_mais]), "atraso_60.csv")
+            d4.download_button("📂 Mês Vigente", to_csv(df_final[m_mes]), "mes_atual.csv")
 
     except Exception as e:
-
-        st.error(f"Erro: {e}")
+        st.error(f"❌ Erro crítico: {e}")
